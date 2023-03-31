@@ -1,0 +1,289 @@
+#!/bin/bash 
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#---------------------------------------------------------------------------
+
+# Requires signal-cli: https://github.com/AsamK/signal-cli
+# dedicated VM highly recommended :)
+
+# Make sure you have started the daemon in your start up scripts using
+# declare -r USERNAME="+xxxxxxxxxxx"
+# signal-cli -u "$USERNAME" daemon &> "/dev/null" &
+
+#---------------------------------------------------------------------------
+
+s="int64"
+ms="string "
+me="array ["
+c="string \"contentType\""
+f="string \"remoteId\""
+v="variant"
+l="string \"expiresInSeconds\""
+intfc="org.asamk.Signal"
+mmbr="MessageReceivedV2"
+perA="EXAMPLE NAME A"
+perB="EXAMPLE NAME B"
+Aphone=15555555555
+Bphone=15555555554
+ctDIR="/home/$USER/.cashtrack"
+logFile="/$ctDIR/cashtrack4.csv"
+
+emoji=True
+
+touch "$ctDIR"
+touch "$ctDIR/$perA"; touch "$ctDIR/$perB"
+touch "$logFile"
+
+errorOut() {
+
+	printf "%s\n" "$*" 1>&2
+	[[ $1 == True ]] && msgOut "$2" "$3"
+}
+
+cashtrack() {
+
+	cashTrackSend() {
+
+		signal-cli --dbus send -m "$2" "$1"
+		echo "MESSAGE OUT"
+	}
+
+	emo() {
+ 		emojiarr=("💵" "💰" "💸" "🤑" "🤩" "👽" "🥰" "😮")
+ 		echo "${emojiarr[$(( RANDOM % ${#emojiarr[@]} ))]}"
+	}
+
+	emoNum() {
+
+ 		local num=$1
+ 		local result=""
+ 		local digit
+
+ 		if (( $(echo "$num < 0" | bc -l) )); then
+
+ 			num=$(echo "$num * -1" | bc -l)
+ 			result="(-) "
+
+ 		else
+
+ 			result="(+) "
+
+ 		fi
+	
+		case $emoji in
+
+			True) 
+				while [ ${#num} -gt 0 ]; do
+
+ 					digit="${num:0:1}"
+
+ 					case "$digit" in
+
+  						".") result="${result} . " ;;
+  						"0") result="${result}0️⃣" ;;
+  						"1") result="${result}1️⃣" ;;
+  						"2") result="${result}2️⃣" ;;
+  						"3") result="${result}3️⃣" ;;
+  						"4") result="${result}4️⃣" ;;
+  						"5") result="${result}5️⃣" ;;
+  						"6") result="${result}6️⃣" ;;
+  						"7") result="${result}7️⃣" ;;
+  						"8") result="${result}8️⃣" ;;
+  						"9") result="${result}9️⃣" ;; esac
+
+ 					num="${num:1}"
+		
+ 				done ;;
+
+			*) result="${result}$num" ;; esac
+
+ 		printf "$result"
+	}
+
+	txRem() {
+
+		txmsg="$PER has removed the last entry!"
+		
+		last="$(tail -n 1 $ctDIR/$PER)"
+		olast="$(tail -n 1 $ctDIR/$oPER)"
+		
+		sed -i '$d' "$logFile" 
+		sed -i '$d' "$ctDIR/$PER" "$ctDIR/$PER"
+		sed -i '$d' "$ctDIR/$oPER" "$ctDIR/$oPER"
+		
+		new=$(tail -n 1 "$ctDIR/$PER")
+		onew=$(tail -n 1 "$ctDIR/$oPER")
+
+		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)"
+                wait; sleep 1 # just in case of rate limiting
+                cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)"
+
+	}
+
+	updatePER() {
+
+		if [[ $5 == True ]]; then 
+
+			txemo=$(emoNum $(echo "$1" | grep -oP '(?<=\[).*(?=\])'))
+			txemo="${txemo:4}"
+			txemo=$(echo $1 | sed -e "s/\[\([^]]*\)\]/$txemo/g")
+
+		else
+			txemo="$1"
+
+		fi
+
+		printf "$(emo) cashTrack updated! $(emo)\n\n"
+		printf "$txemo\n\n$(emoNum $2) : New Balance\n"
+		printf "$(emoNum $3) : Previous Balance\n\nnote:\n$4\n"
+
+	}
+
+	case "$1" in 
+		"+$Aphone") PER="$perA" ; oPER="$perB" ophone="+$Bphone" ;; 
+		"+$Bphone") PER="$perB" ; oPER="$perA" ; ophone="+$Aphone" ;; 
+		*) errorOut True "$1" "err 2" ; return ;; 
+	esac
+
+	[[ "$2" == "XX" ]] && { txmsg="$PER removed the previous entry!" ; txRem "+$1" ; return ; }
+
+	msgBody=$(echo "$3" | tr -d ',\n"/')
+	AMNT="${msgBody%% *}"
+	msgNote="${msgBody#* }"
+
+	case "$2" in
+		"R ") OP="+" ; oOP="-" ; txType="request" ; txmsg="$PER has requested [$AMNT] from $oPER" ;; 
+		"S ") OP="-" ; oOP="+" ; txType="send" ; txmsg="$PER has sent [$AMNT] to $oPER" ;; 
+		*) errorOut True "$1" ; return ;; 
+	esac 
+	
+	if echo "$AMNT" | grep -E '[0-9]+' ; then
+
+		AMNT=$(echo $(printf %.3f $(echo "$AMNT" | bc)) | sed 's/0$//g') 
+		td=$(date)
+		
+		last="$(tail -n 1 $ctDIR/$PER)"
+		new="$(echo "$last $OP $AMNT" | bc)"
+		echo -e "$td\n$new" >> "$ctDIR/$PER" ; wait
+
+		olast="$(tail -n 1 $ctDIR/$oPER)"
+		onew="$(echo "$olast $oOP $AMNT" | bc)"
+		echo -e "$td\n$onew" >> "$ctDIR/$oPER" ; wait
+
+		printf "$td, $AMNT, $txType, $perA, $new, $perB, $onew, $msgNote" >> $logFile; wait	
+
+		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" True)"
+		wait; sleep 1
+		cashTrackSend "$1" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" True)"
+
+	else
+		errorOut True "$1" 
+	fi
+}
+
+examineMsg() {
+
+	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" \
+	"$1" "$2" "$3" "$4" "$5" # print the message information using placeholders
+
+	case "$2" in
+
+		"+$Aphone" | "+$Bphone")
+
+			signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
+
+			signal-cli --dbus sendTyping "$2"
+
+			tx="${3:0:2}" ; tx="${tx^^}"
+
+			case $tx in
+
+				R\ |S\ |XX) echo "cashtrack invoked" ; cashtrack "$2" "$tx" "${3:2}" ;; 
+
+				*) errorOut True "$1" "Err #1: tx value of $tx" ;; esac ;;
+
+		*) errorOut False ;;
+	esac
+}
+
+# Update the global variables that store the message information by
+# searching for the dbus substrings defined above. Then manipulate the strings.
+readMsg() {
+
+	# use a case statement to check which line of dbus output is being read
+	case $1 in
+
+		# set TIMESTAMP by removing the first 6 characters of 'int64' string
+  		0) t="${2:6}" ;;
+
+		# set SENDER by removing everything before and after the quotes
+		1) a="${2#*\"}" ; a="${a%\"*}" ;;
+
+		2) case "$2" in
+
+			# set first line of MSG by removing the first 8 characters of $2 and adding a newline
+			"$ms"*) b="${2:8}\n" ;;
+
+			# if not the begining of the MSG-decrement j to skip this line
+			*) j=$((j-1)) ;; esac ;;
+
+		# if needed, used to add multiple lines to MSG
+		3) case "$2" in
+
+			# if "array [" is found, remove everything after the last quote from MSG
+			"$me"*) b="${b%\"*}" ;;
+
+			# otherwise, append the line to MSG and decrement j until "array [" is found
+			*) b+="$2\n" && j=$((j-1)) ;; esac ;;
+
+		# if needed, set CONTENT TYPE
+		4) case "$d $2" in
+
+			# if contentType is found and d is false, set d to true and decrement j
+			"false $c"*) d=true && j=$((j-1)) ;;
+
+			# if variant is found and d is true, set e to the value between quotes
+			"true $v"*) e="${2#*\"}" ; e="${e%\"*}" ;;
+
+			# otherwise, decrement j
+			*) j=$((j-1)) ;; esac ;;
+
+		# if needed, set FILE NAME
+		5) case "$g $2" in
+
+			# if remoteId is found and g is false, set g to true and decrement j
+			"false $f"*) g=true && j=$((j-1)) ;;
+
+			# if variant is found and g is true, set h to the value between quotes
+			"true $v"*) h="${2#*\"}" ; h="${h%\"*}" ;;
+
+			# otherwise, decrement j
+			*) j=$((j-1)) ;; esac ;;
+
+	# if expiresInSeconds is found, call examineMsg with the global variables as arguments
+	esac; [[ "$2" == "$l"* ]] && examineMsg "$t" "$a" "$b" "$e" "$h"
+}
+
+# Clear the terminal screen and then run a dbus-monitor command that listens for
+# new signal messages. Pipe the output to a while loop that reads each
+# line of the dbus and pass it to the readMsg function.
+clear
+dbus-monitor --session "type='signal',interface='$intfc', member='$mmbr'" |
+while read -r dbus; do
+	# reset variables when new message starting with "int64" is received
+	[[ "$dbus" == "$s"* ]] && { j=0; b=""; e=""; h=""; d=false; g=false; }
+	readMsg $j "$dbus"
+	((j++))
+done
