@@ -40,20 +40,27 @@ perB="EXAMPLE USER B"
 Aphone=15555555555 # Signal user phone numbers
 Bphone=15555555555
 
-emoji=True
+emoji=True #flag to turn off emoji numbers
+
 # check if signalbot database exists; if it doesnt 
 #then create new database table and append initilization line
 if [ ! -f signalbot.db ]; then
-	sqlite3 signalbot.db "CREATE TABLE IF NOT EXISTS cashtrack (date TEXT, amount REAL, type TEXT, perA REAL, balanceA REAL, perB REAL, balanceB REAL, note TEXT);" ;
-    	sqlite3 signalbot.db "INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) VALUES ('1/1/1999', '0.00', 'send', '$perA', '0.00', '$perB', '0.00', 'new db');" ;
+
+	sqlite3 signalbot.db "CREATE TABLE IF NOT EXISTS cashtrack 
+	(date TEXT, amount REAL, type TEXT, perA REAL, balanceA REAL, perB REAL, balanceB REAL, note TEXT);" ;
+
+    	sqlite3 signalbot.db "INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) 
+	VALUES ('1/1/1999', '0.00', 'send', '$perA', '0.00', '$perB', '0.00', 'new db');" ;
+
 fi
+
 echo " --- cashtrack --- "
 
 errorOut() {
 	printf "%s\n" "$*" 1>&2
 	[[ $1 == True ]] && printf "%s %s" "$2" "$3"
 }
-echo "test"
+
 cashtrack() {
 
 	cashTrackSend() {
@@ -130,7 +137,8 @@ cashtrack() {
 
   		txmsg="$PER has removed the last entry!" 
 
-		lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
+		lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB 
+		FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
         	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
 
@@ -144,7 +152,8 @@ cashtrack() {
 
 		sqlite3 signalbot.db "DELETE FROM cashtrack WHERE rowid = (SELECT max(rowid) FROM cashtrack);" ;
 
-                lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
+                lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB 
+		FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
                 IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
 
@@ -178,7 +187,7 @@ cashtrack() {
 
 	# Use read to split msgBody into AMNT and msgNote by the first whitespace
 	read AMNT msgNote <<< "$msgBody" ; 
-	echo "AMNT ---- $AMNT"
+
 	# Use a case statement to set OP, oOP, txType and txmsg based on the second argument
 	case $2 in
 		"R ") OP="+"; oOP="-"; txType="request"; txmsg="$PER has requested [$AMNT] from $oPER" ;;
@@ -192,11 +201,10 @@ cashtrack() {
 	# Use printf and bc to format AMNT as a decimal number
 	AMNT=$(printf %.3f $(bc <<< "$AMNT")) ; AMNT=${AMNT%0}
 
-	echo "AMNT ---- $AMNT"
 	lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;") 
 
 	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
-	echo "$dbNameA $dbAMNTa $dbNameB $dbAMNTb"
+
 	wait
 
 	if [[ "$dbNameA" == "$perA" ]]; then
@@ -212,21 +220,22 @@ cashtrack() {
 	td=$(date)
 	
 	# use SQL commands to insert the transaction data into a database table
-	sql="INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) VALUES ('$td', '$AMNT', '$txType', '$PER', '$new', '$oPER', '$onew', '$msgNote')" ;
-	sqlite3 signalbot.db "$sql"
-	wait
+	sql="INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) 
+	VALUES ('$td', '$AMNT', '$txType', '$PER', '$new', '$oPER', '$onew', '$msgNote')" ;
+
+	sqlite3 signalbot.db "$sql"; wait
+
 	#Use cashTrackSend and updatePER to send messages to both parties
 	cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" True)" ; wait; sleep 1
 	cashTrackSend "$ophone" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" True)" ; wait
 }
 
-echo "dsfsdfsd"
 examineMsg() {
 
 	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" "$@"
 
 	# Check if the sender is a valid phone number, otherwise exit with an error
-	[[ $2 = +($Aphone|$Bphone) ]] || errorOut False
+	[[ $2 == +($Aphone|$Bphone) ]] && { errorOut False; return; }
 	
 	signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
 	signal-cli --dbus sendTyping "$2"
