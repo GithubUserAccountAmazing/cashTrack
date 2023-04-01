@@ -73,7 +73,7 @@ cashtrack() {
 	cashTrackSend() { # Define a function to send a message using signal-cli
 	
 		# Use the first argument as the recipient and the second argument as the message
-		signal-cli --dbus send -m "$2" "$1"
+		signal-cli --dbus send -m "$2" "$1" &> /dev/null
 		
 		# Print  date + "MESSAGE OUT" to standard output
 		printf "%s --- MESSAGE OUT --- " $td
@@ -275,8 +275,10 @@ examineMsg() {
 	# Check if the sender is a valid phone number, otherwise exit with an error
 	[[ $2 != "+($Aphone|$Bphone)" ]] && { errorOut False; return; }
 	
-	signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
-	signal-cli --dbus sendTyping "$2"
+	signal-cli --dbus sendReceipt -t "$1" --type read "$2" &> /dev/null
+	wait ; printf " --- message read --- "
+	signal-cli --dbus sendTyping "$2" &> /dev/null
+	wait ; printf " --- typing --- "
 
 	# Extract the first two characters of the message body and convert them to uppercase
 	tx="${3:0:2}" ; tx="${tx^^}"
