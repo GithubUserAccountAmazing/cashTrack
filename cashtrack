@@ -312,6 +312,9 @@ readMsg() {
 
 			# if "array [" is found, remove everything after the last quote from MSG
 			"$me"*) b="${b%\"*}" ;;
+			
+			# reset msgFlag once msg has completed 
+			msgFlag=false
 
 			# otherwise, append the line to MSG and decrement j until "array [" is found
 			*) b+="$2\n" && j=$((j-1)) ;; esac ;;
@@ -350,8 +353,13 @@ readMsg() {
 clear; printf " --- cashtrack --- "
 dbus-monitor --session "type='signal',interface='$intfc', member='$mmbr'" |
 while read -r dbus; do
-	# reset variables when new message starting with "int64" is received
-	[[ "$dbus" == "$s"* ]] && { j=0; b=""; e=""; h=""; d=false; g=false; }
+
+	# reset variables when new message starting with "int64" is received and
+	# set msgFlag to true to avoid restarting on message body with 'int64'
+	[[ "$dbus" == "$s"* && msgFlag == false ]] && { j=0; b=""; e=""; h=""; d=false; g=false; msgflag=true }
+
+	# call readMsg with j and the current dbus line as arguments
 	readMsg $j "$dbus"
 	((j++))
+	
 done
