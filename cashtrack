@@ -33,28 +33,35 @@ c="string \"contentType\""
 f="string \"remoteId\""
 v="variant"
 l="string \"expiresInSeconds\""
+
+# dbus interface and member 
 intfc="org.asamk.Signal"
 mmbr="MessageReceivedV2"
-perA="EXAMPLE USER A" # Signal user names"
+
+# Signal user names
+perA="EXAMPLE USER A"
 perB="EXAMPLE USER B"
-Aphone=15555555555 # Signal user phone numbers
+
+# Signal user phone numbers
+Aphone=15555555555 
 Bphone=15555555555
 
-emoji=True #flag to turn off emoji numbers
+# flag to turn off emoji numbers
+emoji=True 
 
 # check if signalbot database exists; if it doesnt 
-#then create new database table and append initilization line
-if [ ! -f signalbot.db ]; then
+# use && to create a new database table and append initilization line
+[ ! -f signalbot.db ] && {
 
+	# create a table with the specified columns
 	sqlite3 signalbot.db "CREATE TABLE IF NOT EXISTS cashtrack 
-	(date TEXT, amount REAL, type TEXT, perA REAL, balanceA REAL, perB REAL, balanceB REAL, note TEXT);" ;
-
-    	sqlite3 signalbot.db "INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) 
-	VALUES ('1/1/1999', '0.00', 'send', '$perA', '0.00', '$perB', '0.00', 'new db');" ;
-
-fi
-
-echo " --- cashtrack --- "
+	(date TEXT, amount REAL, type TEXT, perA REAL, balanceA REAL, perB REAL, balanceB REAL, note TEXT);" ; 
+	
+	# insert a row with the initial values
+	sqlite3 signalbot.db "INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) 
+	VALUES ('1/1/1999', '0.00', 'send', '$perA', '0.00', '$perB', '0.00', 'new db');" ; 
+	
+}
 
 errorOut() {
 	printf "%s\n" "$*" 1>&2
@@ -63,24 +70,38 @@ errorOut() {
 
 cashtrack() {
 
-	cashTrackSend() {
+	cashTrackSend() { # Define a function to send a message using signal-cli
+	
+		# Use the first argument as the recipient and the second argument as the message
 		signal-cli --dbus send -m "$2" "$1"
-		echo "MESSAGE OUT"
+		
+		# Print  date + "MESSAGE OUT" to standard output
+		printf "%s --- MESSAGE OUT --- " $td
 	}
 
-	emo() {
+	emo() { # Define a function that picks a random emoji to use within the response message to user
+	
+		# Declare an array of emojis
 		emojiarr=("💵" "💰" "💸" "🤑" "🤩" "👽" "🥰" "😮")
+		
+		# Print the element at a random index of the array
  		echo "${emojiarr[$(( RANDOM % ${#emojiarr[@]} ))]}"
 	}
 
-	emoNum() {
-
+	emoNum() { # Define a function to convert a number to emoji format
+	
+		# Assign the first argument to a local variable num
+		# Initialize an a variable for an empty string for the local result
+		# Initialize a variable for the digit local digit
 		local num=$1 ; local result="" ; local digit
 
-		# Check if the input is negative and multiply by -1 if so, then add (-) to result
+		# Check if the input is negative
  		if (( $(echo "$num < 0" | bc -l) )); then
 
+			# multiply $num by by -1 if it is negative to convert it into a positive
  			num=$(echo "$num * -1" | bc -l)
+			
+			# then append '(-) ' to $result
  			result="(-) "
 
  		else
@@ -110,66 +131,79 @@ cashtrack() {
 
   			done ;;
 		       
-			*) result="${result}$num" ;; esac	
-		
+			*) result="${result}$num" ;; esac
+			
+		# Print the result to standard output
 		printf "$result"
 	}
 
-        updatePER() {
+        updatePER() { # Define a function to update the message with emoji and balances
 	
+		# Assign the first argument to a local variable for manipulation
 		local txemo=$1	
 
-                # If the fifth argument is True, replace the brackets with emoji numbers
+                # If the fifth argument is True, replace the brackets and contents with emoji numbers
                 if [[ $5 == True ]]; then
+		
+			# remove everything before and after the brackets-leaving only the number
 			txemo=${txemo#*[}; txemo=${txemo%]*}
+			
+			# Convert the number to emoji by calling function emoNum
 			txemo=$(emoNum $txemo)
+			
+			# Replace the brackets with the new emoji number
                         txemo=$(sed -e "s/\[\([^]]*\)\]/$txemo/g" <<< "$1")
                 fi
 
-                # Print a message with emoji and the arguments
+                # Print a message with emoji and the arguments to standard output
                 printf "$(emo) cashTrack updated! $(emo)\n\n"
                 printf "$txemo\n\n$(emoNum $2) : New Balance\n\n"
                 printf "$(emoNum $3) : Previous Balance\n\nnote:\n$4\n"
 
         }
 
-	txRem() {
-
+	txRem() { # Define a function to remove the last transaction which is called when the user uses XX command
+	
+  		# Assign a message to txmsg variable
   		txmsg="$PER has removed the last entry!" 
 
+		# Query the database for the last result and assign the result to lastTx variable
+		# to be used fo
 		lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB 
 		FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
-        	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
+		 # Split the result by | and assign the values to four variables
+        	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ; wait
 
+  		# Check if dbNameA matches perA and assign the corresponding balances to last and olast variables
         	if [[ "$dbNameA" == "$perA" ]]; then
-                	last="$dbAMNTa"
-                	olast="$dbAMNTb"
+                	last="$dbAMNTa" ; olast="$dbAMNTb"
 		else
-                	last="$dbAMNTb"
-                	olast="$dbAMNTa"
+                	last="$dbAMNTb" ; olast="$dbAMNTa"
         	fi
 
-		sqlite3 signalbot.db "DELETE FROM cashtrack WHERE rowid = (SELECT max(rowid) FROM cashtrack);" ;
+		# Delete the last row from the database
+		sqlite3 signalbot.db "DELETE FROM cashtrack WHERE rowid = (SELECT max(rowid) FROM cashtrack);"
 
+		# Query the database again and assign the result to lastTx variable
                 lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB 
 		FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
-                IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
+		# Split the result by | and assign the values to four variables
+                IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ; wait
 
+		 # Check if dbNameA matches perA and assign the corresponding balances to new and onew variables
                 if [[ "$dbNameA" == "$perA" ]]; then
-                        new="$dbAMNTa"
-                        onew="$dbAMNTb"
+                        new="$dbAMNTa" ; onew="$dbAMNTb"
 		else
-                        new="$dbAMNTb"
-                        onew="$dbAMNTa"
+                        new="$dbAMNTb" ; onew="$dbAMNTa"
                 fi
 
-		# call a function with arguments
+		# Call cashTrackSend function with arguments for the user who used the XX command
   		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)" 
  		wait; sleep 1 
 
-		# call the same function again for the other user
+		# Call cashTrackSend function with arguments to alert the other user that XX command was used
  		cashTrackSend "$ophone" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" False)" 
 	}
 
@@ -180,6 +214,7 @@ cashtrack() {
 		*) errorOut True "$1" "err 2" ; return ;; 
 	esac
 
+	# Check if the second argument is XX and call txRem function with the user phone number as argument
 	[[ $2 == "XX" ]] && { txmsg="$PER removed the previous entry!"; txRem "+$1"; return; } ;
 
 	# Use parameter expansion to remove commas, newlines and quotes from the third argument
@@ -189,40 +224,44 @@ cashtrack() {
 	read AMNT msgNote <<< "$msgBody" ; 
 
 	# Use a case statement to set OP, oOP, txType and txmsg based on the second argument
+	# OP and oOP will be used as the operator of the calculation which adds or subtracts the AMNT from the user balance
 	case $2 in
 		"R ") OP="+"; oOP="-"; txType="request"; txmsg="$PER has requested [$AMNT] from $oPER" ;;
 		"S ") OP="-"; oOP="+"; txType="send"; txmsg="$PER has sent [$AMNT] to $oPER" ;;
 		*) errorOut True "$1"; return ;;
 	esac
 
-	# Check if AMNT is a valid number, otherwise call errorOut
+	# Validate AMNT as a number or call errorOut
 	[[ $AMNT =~ [0-9]+ ]] || errorOut True "$1"
 
 	# Use printf and bc to format AMNT as a decimal number
 	AMNT=$(printf %.3f $(bc <<< "$AMNT")) ; AMNT=${AMNT%0}
 
+	# Get the last transaction from the database
 	lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;") 
 
-	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
+	# Split the result by | and assign the values to four variables
+	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ; wait
 
-	wait
-
+	# Check if dbNameA matches perA and assign the corresponding balances to last and olast variables
 	if [[ "$dbNameA" == "$perA" ]]; then
 		last="$dbAMNTa" ; olast="$dbAMNTb"
 	else
 		last="$dbAMNTb" ; olast="$dbAMNTa"
 	fi
 
+	# Calculate new and onew balances for the users
 	new=$(echo "$last $OP $AMNT" | bc)
 	onew=$(echo "$olast $oOP $AMNT" | bc)
 
 	# Set td as date 
 	td=$(date)
 	
-	# use SQL commands to insert the transaction data into a database table
+	# set sql INSERT INTO string with the new balance data for both users and message note
 	sql="INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) 
 	VALUES ('$td', '$AMNT', '$txType', '$PER', '$new', '$oPER', '$onew', '$msgNote')" ;
 
+	# insert the transaction data into a database table
 	sqlite3 signalbot.db "$sql"; wait
 
 	#Use cashTrackSend and updatePER to send messages to both parties
@@ -309,7 +348,7 @@ readMsg() {
 # Clear the terminal screen and then run a dbus-monitor command that listens for
 # new signal messages. Pipe the output to a while loop that reads each
 # line of the dbus and pass it to the readMsg function.
-clear
+clear; printf " --- cashtrack --- "
 dbus-monitor --session "type='signal',interface='$intfc', member='$mmbr'" |
 while read -r dbus; do
 	# reset variables when new message starting with "int64" is received
