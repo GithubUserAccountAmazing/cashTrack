@@ -235,7 +235,7 @@ examineMsg() {
 	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" "$@"
 
 	# Check if the sender is a valid phone number, otherwise exit with an error
-	[[ $2 == +($Aphone|$Bphone) ]] && { errorOut False; return; }
+	[[ $2 != "+($Aphone|$Bphone)" ]] && { errorOut False; return; }
 	
 	signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
 	signal-cli --dbus sendTyping "$2"
