@@ -168,7 +168,6 @@ cashtrack() {
   		txmsg="$PER has removed the last entry!" 
 
 		# Query the database for the last result and assign the result to lastTx variable
-		# to be used fo
 		lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB 
 		FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
