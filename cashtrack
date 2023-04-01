@@ -15,7 +15,9 @@
 
 #---------------------------------------------------------------------------
 
-# Requires signal-cli: https://github.com/AsamK/signal-cli
+# Requirements:
+# signal-cli: https://github.com/AsamK/signal-cli
+# sqlite3: $ apt install sqlite3
 # dedicated VM highly recommended :)
 
 # Make sure you have started the daemon in your start up scripts using
@@ -33,191 +35,210 @@ v="variant"
 l="string \"expiresInSeconds\""
 intfc="org.asamk.Signal"
 mmbr="MessageReceivedV2"
-perA="EXAMPLE NAME A"
-perB="EXAMPLE NAME B"
-Aphone=15555555555
-Bphone=15555555554
-ctDIR="/home/$USER/.cashtrack"
-logFile="/$ctDIR/cashtrack4.csv"
+perA="EXAMPLE USER A" # Signal user names"
+perB="EXAMPLE USER B"
+Aphone=15555555555 # Signal user phone numbers
+Bphone=15555555555
 
 emoji=True
-
-touch "$ctDIR"
-touch "$ctDIR/$perA"; touch "$ctDIR/$perB"
-touch "$logFile"
+# check if signalbot database exists; if it doesnt 
+#then create new database table and append initilization line
+if [ ! -f signalbot.db ]; then
+	sqlite3 signalbot.db "CREATE TABLE IF NOT EXISTS cashtrack (date TEXT, amount REAL, type TEXT, perA REAL, balanceA REAL, perB REAL, balanceB REAL, note TEXT);" ;
+    	sqlite3 signalbot.db "INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) VALUES ('1/1/1999', '0.00', 'send', '$perA', '0.00', '$perB', '0.00', 'new db');" ;
+fi
+echo " --- cashtrack --- "
 
 errorOut() {
-
 	printf "%s\n" "$*" 1>&2
-	[[ $1 == True ]] && msgOut "$2" "$3"
+	[[ $1 == True ]] && printf "%s %s" "$2" "$3"
 }
-
+echo "test"
 cashtrack() {
 
 	cashTrackSend() {
-
 		signal-cli --dbus send -m "$2" "$1"
 		echo "MESSAGE OUT"
 	}
 
 	emo() {
- 		emojiarr=("💵" "💰" "💸" "🤑" "🤩" "👽" "🥰" "😮")
+		emojiarr=("💵" "💰" "💸" "🤑" "🤩" "👽" "🥰" "😮")
  		echo "${emojiarr[$(( RANDOM % ${#emojiarr[@]} ))]}"
 	}
 
 	emoNum() {
 
- 		local num=$1
- 		local result=""
- 		local digit
+		local num=$1 ; local result="" ; local digit
 
+		# Check if the input is negative and multiply by -1 if so, then add (-) to result
  		if (( $(echo "$num < 0" | bc -l) )); then
 
  			num=$(echo "$num * -1" | bc -l)
  			result="(-) "
 
  		else
-
+			# else add (+) instead
  			result="(+) "
 
  		fi
-	
+
 		case $emoji in
 
-			True) 
-				while [ ${#num} -gt 0 ]; do
+			True) 	
+  			# Loop through each digit of the input and append the corresponding emoji to the output
+  			while [ ${#num} -gt 0 ]; do
 
- 					digit="${num:0:1}"
+    				digit="${num:0:1}"
 
- 					case "$digit" in
+    				case "$digit" in
 
-  						".") result="${result} . " ;;
-  						"0") result="${result}0️⃣" ;;
-  						"1") result="${result}1️⃣" ;;
-  						"2") result="${result}2️⃣" ;;
-  						"3") result="${result}3️⃣" ;;
-  						"4") result="${result}4️⃣" ;;
-  						"5") result="${result}5️⃣" ;;
-  						"6") result="${result}6️⃣" ;;
-  						"7") result="${result}7️⃣" ;;
-  						"8") result="${result}8️⃣" ;;
-  						"9") result="${result}9️⃣" ;; esac
+					# replace '.' character with ' . ' for better formatting
+      					".") result+=" . " ;;
 
- 					num="${num:1}"
+					# Use a unicode variation selector' }️⃣ 'to make the digit an emoji
+      					*) result+="${digit}️⃣}" ; result=${result%?} ;;
+				esac
+
+    				num="${num:1}"
+
+  			done ;;
+		       
+			*) result="${result}$num" ;; esac	
 		
- 				done ;;
-
-			*) result="${result}$num" ;; esac
-
- 		printf "$result"
+		printf "$result"
 	}
+
+        updatePER() {
+	
+		local txemo=$1	
+
+                # If the fifth argument is True, replace the brackets with emoji numbers
+                if [[ $5 == True ]]; then
+			txemo=${txemo#*[}; txemo=${txemo%]*}
+			txemo=$(emoNum $txemo)
+                        txemo=$(sed -e "s/\[\([^]]*\)\]/$txemo/g" <<< "$1")
+                fi
+
+                # Print a message with emoji and the arguments
+                printf "$(emo) cashTrack updated! $(emo)\n\n"
+                printf "$txemo\n\n$(emoNum $2) : New Balance\n\n"
+                printf "$(emoNum $3) : Previous Balance\n\nnote:\n$4\n"
+
+        }
 
 	txRem() {
 
-		txmsg="$PER has removed the last entry!"
-		
-		last="$(tail -n 1 $ctDIR/$PER)"
-		olast="$(tail -n 1 $ctDIR/$oPER)"
-		
-		sed -i '$d' "$logFile" 
-		sed -i '$d' "$ctDIR/$PER" "$ctDIR/$PER"
-		sed -i '$d' "$ctDIR/$oPER" "$ctDIR/$oPER"
-		
-		new=$(tail -n 1 "$ctDIR/$PER")
-		onew=$(tail -n 1 "$ctDIR/$oPER")
+  		txmsg="$PER has removed the last entry!" 
 
-		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)"
-                wait; sleep 1 # just in case of rate limiting
-                cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)"
+		lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
-	}
+        	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
 
-	updatePER() {
-
-		if [[ $5 == True ]]; then 
-
-			txemo=$(emoNum $(echo "$1" | grep -oP '(?<=\[).*(?=\])'))
-			txemo="${txemo:4}"
-			txemo=$(echo $1 | sed -e "s/\[\([^]]*\)\]/$txemo/g")
-
+        	if [[ "$dbNameA" == "$perA" ]]; then
+                	last="$dbAMNTa"
+                	olast="$dbAMNTb"
 		else
-			txemo="$1"
+                	last="$dbAMNTb"
+                	olast="$dbAMNTa"
+        	fi
 
-		fi
+		sqlite3 signalbot.db "DELETE FROM cashtrack WHERE rowid = (SELECT max(rowid) FROM cashtrack);" ;
 
-		printf "$(emo) cashTrack updated! $(emo)\n\n"
-		printf "$txemo\n\n$(emoNum $2) : New Balance\n"
-		printf "$(emoNum $3) : Previous Balance\n\nnote:\n$4\n"
+                lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;" ;)
 
+                IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
+
+                if [[ "$dbNameA" == "$perA" ]]; then
+                        new="$dbAMNTa"
+                        onew="$dbAMNTb"
+		else
+                        new="$dbAMNTb"
+                        onew="$dbAMNTa"
+                fi
+
+		# call a function with arguments
+  		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" False)" 
+ 		wait; sleep 1 
+
+		# call the same function again for the other user
+ 		cashTrackSend "$ophone" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" False)" 
 	}
 
+	# Use case to assign PER and oPER names based on phone number creating tx
 	case "$1" in 
 		"+$Aphone") PER="$perA" ; oPER="$perB" ophone="+$Bphone" ;; 
 		"+$Bphone") PER="$perB" ; oPER="$perA" ; ophone="+$Aphone" ;; 
 		*) errorOut True "$1" "err 2" ; return ;; 
 	esac
 
-	[[ "$2" == "XX" ]] && { txmsg="$PER removed the previous entry!" ; txRem "+$1" ; return ; }
+	[[ $2 == "XX" ]] && { txmsg="$PER removed the previous entry!"; txRem "+$1"; return; } ;
 
-	msgBody=$(echo "$3" | tr -d ',\n"/')
-	AMNT="${msgBody%% *}"
-	msgNote="${msgBody#* }"
+	# Use parameter expansion to remove commas, newlines and quotes from the third argument
+	msgBody=${3//[$'\n",']/}
 
-	case "$2" in
-		"R ") OP="+" ; oOP="-" ; txType="request" ; txmsg="$PER has requested [$AMNT] from $oPER" ;; 
-		"S ") OP="-" ; oOP="+" ; txType="send" ; txmsg="$PER has sent [$AMNT] to $oPER" ;; 
-		*) errorOut True "$1" ; return ;; 
-	esac 
-	
-	if echo "$AMNT" | grep -E '[0-9]+' ; then
+	# Use read to split msgBody into AMNT and msgNote by the first whitespace
+	read AMNT msgNote <<< "$msgBody" ; 
+	echo "AMNT ---- $AMNT"
+	# Use a case statement to set OP, oOP, txType and txmsg based on the second argument
+	case $2 in
+		"R ") OP="+"; oOP="-"; txType="request"; txmsg="$PER has requested [$AMNT] from $oPER" ;;
+		"S ") OP="-"; oOP="+"; txType="send"; txmsg="$PER has sent [$AMNT] to $oPER" ;;
+		*) errorOut True "$1"; return ;;
+	esac
 
-		AMNT=$(echo $(printf %.3f $(echo "$AMNT" | bc)) | sed 's/0$//g') 
-		td=$(date)
-		
-		last="$(tail -n 1 $ctDIR/$PER)"
-		new="$(echo "$last $OP $AMNT" | bc)"
-		echo -e "$td\n$new" >> "$ctDIR/$PER" ; wait
+	# Check if AMNT is a valid number, otherwise call errorOut
+	[[ $AMNT =~ [0-9]+ ]] || errorOut True "$1"
 
-		olast="$(tail -n 1 $ctDIR/$oPER)"
-		onew="$(echo "$olast $oOP $AMNT" | bc)"
-		echo -e "$td\n$onew" >> "$ctDIR/$oPER" ; wait
+	# Use printf and bc to format AMNT as a decimal number
+	AMNT=$(printf %.3f $(bc <<< "$AMNT")) ; AMNT=${AMNT%0}
 
-		printf "$td, $AMNT, $txType, $perA, $new, $perB, $onew, $msgNote" >> $logFile; wait	
+	echo "AMNT ---- $AMNT"
+	lastTx=$(sqlite3 signalbot.db "SELECT perA, balanceA, perB, balanceB FROM cashtrack ORDER BY rowid DESC LIMIT 1;") 
 
-		cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" True)"
-		wait; sleep 1
-		cashTrackSend "$1" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" True)"
+	IFS='|' read -r dbNameA dbAMNTa dbNameB dbAMNTb <<< "$lastTx" ;
+	echo "$dbNameA $dbAMNTa $dbNameB $dbAMNTb"
+	wait
 
+	if [[ "$dbNameA" == "$perA" ]]; then
+		last="$dbAMNTa" ; olast="$dbAMNTb"
 	else
-		errorOut True "$1" 
+		last="$dbAMNTb" ; olast="$dbAMNTa"
 	fi
+
+	new=$(echo "$last $OP $AMNT" | bc)
+	onew=$(echo "$olast $oOP $AMNT" | bc)
+
+	# Set td as date 
+	td=$(date)
+	
+	# use SQL commands to insert the transaction data into a database table
+	sql="INSERT INTO cashtrack (date, amount, type, perA, balanceA, perB, balanceB, note) VALUES ('$td', '$AMNT', '$txType', '$PER', '$new', '$oPER', '$onew', '$msgNote')" ;
+	sqlite3 signalbot.db "$sql"
+	wait
+	#Use cashTrackSend and updatePER to send messages to both parties
+	cashTrackSend "$1" "$(updatePER "$txmsg" "$new" "$last" "$msgNote" True)" ; wait; sleep 1
+	cashTrackSend "$ophone" "$(updatePER "$txmsg" "$onew" "$olast" "$msgNote" True)" ; wait
 }
 
+echo "dsfsdfsd"
 examineMsg() {
 
-	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" \
-	"$1" "$2" "$3" "$4" "$5" # print the message information using placeholders
+	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" "$@"
 
-	case "$2" in
+	# Check if the sender is a valid phone number, otherwise exit with an error
+	[[ $2 = +($Aphone|$Bphone) ]] || errorOut False
+	
+	signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
+	signal-cli --dbus sendTyping "$2"
 
-		"+$Aphone" | "+$Bphone")
+	# Extract the first two characters of the message body and convert them to uppercase
+	tx="${3:0:2}" ; tx="${tx^^}"
 
-			signal-cli --dbus sendReceipt -t "$1" --type read "$2" ; wait
-
-			signal-cli --dbus sendTyping "$2"
-
-			tx="${3:0:2}" ; tx="${tx^^}"
-
-			case $tx in
-
-				R\ |S\ |XX) echo "cashtrack invoked" ; cashtrack "$2" "$tx" "${3:2}" ;; 
-
-				*) errorOut True "$1" "Err #1: tx value of $tx" ;; esac ;;
-
-		*) errorOut False ;;
+	case $tx in
+		R\ |S\ |XX) echo "cashtrack invoked" ; cashtrack "$2" "$tx" "${3:2}" ;; 
+		*) errorOut True "$1" "Err #1: tx value of $tx" ;; 
 	esac
 }
-
 # Update the global variables that store the message information by
 # searching for the dbus substrings defined above. Then manipulate the strings.
 readMsg() {
