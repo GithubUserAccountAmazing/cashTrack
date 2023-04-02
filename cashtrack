@@ -272,96 +272,100 @@ examineMsg() {
 
 	printf "TIME: %s\\nSENDER: %s\\nMSG: %b\\nCONTENT TYPE: %s\\nFILE NAME: %s\\n" "$@"
 
-	# Check if the sender is a valid phone number, otherwise exit with an error
-	[[ $2 != "+($Aphone|$Bphone)" ]] && { errorOut False; return; }
+        # Check if the sender is a valid phone number, otherwise exit with an error
+        [[ "$2" != "+$Aphone" || "$2" != "+$Aphone" ]] && { errorOut False; return; }
 	
+	# Put the message into a 'read' status 
 	signal-cli --dbus sendReceipt -t "$1" --type read "$2" &> /dev/null
-	wait ; printf " --- message read --- "
-	signal-cli --dbus sendTyping "$2" &> /dev/null
-	wait ; printf " --- typing --- "
+        wait ; printf '%s\n' " --- message read --- "
+	
+	# then send the typing animation to user
+        signal-cli --dbus sendTyping "$2" &> /dev/null
+        wait ; printf '%s\n' " --- typing --- "
 
-	# Extract the first two characters of the message body and convert them to uppercase
-	tx="${3:0:2}" ; tx="${tx^^}"
+        # Extract the first two characters of the message body and convert them to uppercase
+        tx="${3:0:2}" ; tx="${tx^^}"
 
-	case $tx in
-		R\ |S\ |XX) echo "cashtrack invoked" ; cashtrack "$2" "$tx" "${3:2}" ;; 
-		*) errorOut True "$1" "Err #1: tx value of $tx" ;; 
-	esac
+        case $tx in
+                R\ |S\ |XX) echo "cashtrack invoked" ; cashtrack "$2" "$tx" "${3:2}" ;;
+                *) errorOut True "$1" "Err #1: tx value of $tx" ;;
+        esac
 }
 # Update the global variables that store the message information by
 # searching for the dbus substrings defined above. Then manipulate the strings.
 readMsg() {
 
-	# use a case statement to check which line of dbus output is being read
-	case $1 in
+        # use a case statement to check which line of dbus output is being read
+        case $1 in
 
-		# set TIMESTAMP by removing the first 6 characters of 'int64' string
-  		0) t="${2:6}" ;;
+                # set TIMESTAMP by removing the first 6 characters of 'int64' string
+                0) t="${2:6}" ;;
 
-		# set SENDER by removing everything before and after the quotes
-		1) a="${2#*\"}" ; a="${a%\"*}" ;;
+                # set SENDER by removing everything before and after the quotes
+                1) a="${2#*\"}" ; a="${a%\"*}" ;;
 
-		2) case "$2" in
+                2) case "$2" in
 
-			# set first line of MSG by removing the first 8 characters of $2 and adding a newline
-			"$ms"*) b="${2:8}\n" ;;
+                        # set first line of MSG by removing the first 8 characters of $2 and adding a newline
+                        "$ms"*) b="${2:8}\n" ;;
 
-			# if not the begining of the MSG-decrement j to skip this line
-			*) j=$((j-1)) ;; esac ;;
+                        # if not the begining of the MSG-decrement j to skip this line
+                        *) j=$((j-1)) ;; esac ;;
 
-		# if needed, used to add multiple lines to MSG
-		3) case "$2" in
+                # if needed, used to add multiple lines to MSG
+                3) case "$2" in
 
-			# if "array [" is found, remove everything after the last quote from MSG
-			"$me"*) b="${b%\"*}" ;;
-			
-			# reset msgFlag once msg has completed 
-			msgFlag=false
+                        # if "array [" is found, remove everything after the last quote from MSG
+                        "$me"*) b="${b%\"*}"
 
-			# otherwise, append the line to MSG and decrement j until "array [" is found
-			*) b+="$2\n" && j=$((j-1)) ;; esac ;;
+                        # reset msgFlag once msg has completed
+                        msgFlag=false ;;
 
-		# if needed, set CONTENT TYPE
-		4) case "$d $2" in
+                        # otherwise, append the line to MSG and decrement j until "array [" is found
+                        *) b+="$2\n" && j=$((j-1)) ;; esac ;;
 
-			# if contentType is found and d is false, set d to true and decrement j
-			"false $c"*) d=true && j=$((j-1)) ;;
+                # if needed, set CONTENT TYPE
+                4) case "$d $2" in
 
-			# if variant is found and d is true, set e to the value between quotes
-			"true $v"*) e="${2#*\"}" ; e="${e%\"*}" ;;
+                        # if contentType is found and d is false, set d to true and decrement j
+                        "false $c"*) d=true && j=$((j-1)) ;;
 
-			# otherwise, decrement j
-			*) j=$((j-1)) ;; esac ;;
+                        # if variant is found and d is true, set e to the value between quotes
+                        "true $v"*) e="${2#*\"}" ; e="${e%\"*}" ;;
 
-		# if needed, set FILE NAME
-		5) case "$g $2" in
+                        # otherwise, decrement j
+                        *) j=$((j-1)) ;; esac ;;
 
-			# if remoteId is found and g is false, set g to true and decrement j
-			"false $f"*) g=true && j=$((j-1)) ;;
+                # if needed, set FILE NAME
+                5) case "$g $2" in
 
-			# if variant is found and g is true, set h to the value between quotes
-			"true $v"*) h="${2#*\"}" ; h="${h%\"*}" ;;
+                        # if remoteId is found and g is false, set g to true and decrement j
+                        "false $f"*) g=true && j=$((j-1)) ;;
 
-			# otherwise, decrement j
-			*) j=$((j-1)) ;; esac ;;
+                        # if variant is found and g is true, set h to the value between quotes
+                        "true $v"*) h="${2#*\"}" ; h="${h%\"*}" ;;
 
-	# if expiresInSeconds is found, call examineMsg with the global variables as arguments
-	esac; [[ "$2" == "$l"* ]] && examineMsg "$t" "$a" "$b" "$e" "$h"
+                        # otherwise, decrement j
+                        *) j=$((j-1)) ;; esac ;;
+
+        # if expiresInSeconds is found, call examineMsg with the global variables as arguments
+        esac; [[ "$2" == "$l"* ]] && examineMsg "$t" "$a" "$b" "$e" "$h"
 }
 
 # Clear the terminal screen and then run a dbus-monitor command that listens for
 # new signal messages. Pipe the output to a while loop that reads each
 # line of the dbus and pass it to the readMsg function.
-clear; printf " --- cashtrack --- "
+clear; printf '%s\n' " --- cashtrack --- " ; msgFlag=false
 dbus-monitor --session "type='signal',interface='$intfc', member='$mmbr'" |
 while read -r dbus; do
 
-	# reset variables when new message starting with "int64" is received and
-	# set msgFlag to true to avoid restarting on message body with 'int64'
-	[[ "$dbus" == "$s"* && msgFlag == false ]] && { j=0; b=""; e=""; h=""; d=false; g=false; msgflag=true }
+        # reset variables when new message starting with "int64" is received and
+        # set msgFlag to true to avoid restarting on message body with 'int64'
+        [[ "$dbus" == "$s"* && "$msgFlag" == "false" ]] && { j=0; b=""; e=""; h=""; d=false; g=false; msgFlag=true; }
 
-	# call readMsg with j and the current dbus line as arguments
-	readMsg $j "$dbus"
-	((j++))
+        # call readMsg with j and the current dbus line as arguments
+        readMsg $j "$dbus"
+        ((j++))
+
 	
 done
