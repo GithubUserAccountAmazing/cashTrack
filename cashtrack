@@ -354,7 +354,7 @@ readMsg() {
                         *) j=$((j-1)) ;; esac ;;
 
         # if expiresInSeconds is found, call examineMsg with the global variables as arguments
-        esac; [[ "$2" == "$l"* ]] && examineMsg "$t" "$a" "$b" "$e" "$h"
+        esac; [[ "$2" == "$l"* && "$msgFlag" == "false" ]] && examineMsg "$t" "$a" "$b" "$e" "$h"
 }
 
 # Clear the terminal screen and then run a dbus-monitor command that listens for
