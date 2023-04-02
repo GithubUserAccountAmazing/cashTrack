@@ -20,9 +20,14 @@ CashTrack is a bash script that allows two people to pay for each other for vari
 
 
 ## Setup
-1. start the signal-cli daemon using `signal-cli -u "$USERNAME" daemon &> "/dev/null" &`
-2. Navigate to the cloned repository: `cd cashTrack`
-3. Run `./cashTrack` to start the program.
+1. Navigate to the cloned repository: `cd cashTrack`
+2. Modify the signal names and phone numbers in cashTrack to match the 2 users who will be using cashTrack
+- perA="EXAMPLE USER A"
+- perB="EXAMPLE USER B"
+- Aphone=15555555555 
+- Bphone=15555555555
+3. start the signal-cli daemon using `signal-cli -u "$USERNAME" daemon &> "/dev/null" &`
+4. Run `./cashTrack` to start the program.
 
 
 ## Usage
