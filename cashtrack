@@ -26,17 +26,7 @@
 
 #---------------------------------------------------------------------------
 
-s="int64"
-ms="string "
-me="array ["
-c="string \"contentType\""
-f="string \"remoteId\""
-v="variant"
-l="string \"expiresInSeconds\""
-
-# dbus interface and member 
-intfc="org.asamk.Signal"
-mmbr="MessageReceivedV2"
+# Declare user defined variables
 
 # Signal user names
 perA="EXAMPLE USER A"
@@ -48,6 +38,20 @@ Bphone=15555555555
 
 # flag to turn off emoji numbers
 emoji=True 
+
+#---------------------------------------------------------------------------
+
+s="int64"
+ms="string "
+me="array ["
+c="string \"contentType\""
+f="string \"remoteId\""
+v="variant"
+l="string \"expiresInSeconds\""
+
+# dbus interface and member 
+intfc="org.asamk.Signal"
+mmbr="MessageReceivedV2"
 
 # check if signalbot database exists; if it doesnt 
 # use && to create a new database table and append initilization line
@@ -291,6 +295,7 @@ examineMsg() {
                 *) errorOut True "$1" "Err #1: tx value of $tx" ;;
         esac
 }
+
 # Update the global variables that store the message information by
 # searching for the dbus substrings defined above. Then manipulate the strings.
 readMsg() {
@@ -367,5 +372,4 @@ while read -r dbus; do
         readMsg $j "$dbus"
         ((j++))
 
-	
 done
