@@ -7,9 +7,10 @@
 <p align="center"><img src="https://user-images.githubusercontent.com/105183376/229327292-d98418df-f291-45a6-b72a-5b6f663b2a24.gif" alt="cash track example"></p>
 <br><br>
 
+Requirements:
 ```
-- Requires signal-cli: https://github.com/AsamK/signal-cli
-- requires sqlite3: apt install sqlite3
+- signal-cli: https://github.com/AsamK/signal-cli
+- sqlite3: apt install sqlite3
 - dedicated VM recommended
 ```
 <br><br>
